@@ -4,7 +4,7 @@ export const stateToolDeclarations = [
   {
     name: "get_student_state",
     description:
-      "Retrieves the student's complete, authoritative state including active goals, upcoming/overdue tasks, current workload vs daily capacity, and existing calendar events.",
+      "Retrieves the student's authoritative state snapshot including active goals, unfinished tasks, current workload vs daily capacity, and upcoming calendar events. Use before making major workload adjustments. Do not call multiple times in the same turn.",
     parameters: {
       type: "OBJECT",
       properties: {},
@@ -18,8 +18,25 @@ export async function executeStateTool(
   name: string,
   _args: Record<string, unknown>
 ) {
-  if (name === "get_student_state") {
-    return await getStudentState(userId);
+  try {
+    if (name === "get_student_state") {
+      const state = await getStudentState(userId);
+      return {
+        success: true,
+        user: state.user,
+        goals: state.goals,
+        tasks: state.tasks,
+        workload: state.workload,
+        calendar: state.calendar,
+        topics: state.topics,
+      };
+    }
+    return { success: false, error: `Unknown state tool: ${name}` };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
-  throw new Error(`Unknown state tool: ${name}`);
 }
+

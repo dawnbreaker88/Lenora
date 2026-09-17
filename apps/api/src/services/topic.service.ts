@@ -73,12 +73,27 @@ export async function updateTopicLearningState(
 ) {
   const { userId, topicId, evidence } = input;
   const userObjId = new Types.ObjectId(userId);
-  const topicObjId = new Types.ObjectId(topicId);
 
-  const topic = await Topic.findOne({ _id: topicObjId, userId: userObjId });
+  let topic = null;
+  if (topicId && Types.ObjectId.isValid(topicId)) {
+    topic = await Topic.findOne({ _id: new Types.ObjectId(topicId), userId: userObjId });
+  }
+
+  // Fallback: If topicId wasn't found or matched a session ID, try resolving via sessionId
+  if (!topic && evidence.sessionId && Types.ObjectId.isValid(evidence.sessionId)) {
+    const { AgentSession } = await import("../models/AgentSession.js");
+    const session = await AgentSession.findOne({ _id: new Types.ObjectId(evidence.sessionId), userId: userObjId });
+    if (session?.context?.topicId) {
+      topic = await Topic.findOne({ _id: session.context.topicId, userId: userObjId });
+    }
+  }
+
   if (!topic) {
     throw new Error(`Topic not found for ID: ${topicId}`);
   }
+
+  const topicObjId = topic._id;
+
 
   // Save the evidence record
   const savedEvidence = await LearningEvidence.create({

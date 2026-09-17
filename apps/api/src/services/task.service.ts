@@ -45,9 +45,26 @@ export async function getTasks(userId: string, filterStatus?: string) {
 }
 
 export async function createTask(userId: string, input: CreateTaskInput) {
+  const userObjectId = new Types.ObjectId(userId);
+  const cleanTitle = input.title.trim();
+
+  // Duplicate protection: check if an active task with identical title already exists
+  const existingTask = await Task.findOne({
+    userId: userObjectId,
+    title: { $regex: new RegExp(`^${cleanTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+    status: { $in: ["todo", "in_progress"] },
+  }).lean();
+
+  if (existingTask) {
+    return {
+      ...existingTask,
+      isDuplicate: true,
+    };
+  }
+
   const task = await Task.create({
-    userId: new Types.ObjectId(userId),
-    title: input.title.trim(),
+    userId: userObjectId,
+    title: cleanTitle,
     estimatedMinutes: input.estimatedMinutes || 30,
     description: input.description,
     goalId: input.goalId ? new Types.ObjectId(input.goalId) : undefined,
@@ -64,6 +81,7 @@ export async function createTask(userId: string, input: CreateTaskInput) {
 
   return task.toObject();
 }
+
 
 export async function updateTask(userId: string, taskId: string, input: UpdateTaskInput) {
   const updateData: Record<string, unknown> = {};

@@ -226,3 +226,102 @@ export async function getStudentState(userId: string): Promise<StudentState> {
     generatedAt: now.toISOString(),
   };
 }
+
+/**
+ * Produces a compact, token-efficient state summary tailored for the Planner Agent.
+ */
+export function formatPlannerStateContext(state: StudentState): string {
+  const activeGoals = state.goals.filter((g) => g.status === "active");
+  const goalsStr = activeGoals.length
+    ? activeGoals
+        .map(
+          (g) =>
+            `- [${g.id}] "${g.title}" (Priority: ${g.priority}, Target: ${g.targetDate ? g.targetDate.split("T")[0] : "N/A"}, Progress: ${g.progress}%)`
+        )
+        .join("\n")
+    : "No active goals.";
+
+  const overdueStr = state.tasks.overdue.length
+    ? state.tasks.overdue
+        .map(
+          (t) =>
+            `- [${t.id}] "${t.title}" (${t.estimatedMinutes}m, Due: ${t.dueAt ? String(t.dueAt).split("T")[0] : "Past due"})`
+        )
+        .join("\n")
+    : "None.";
+
+  const todayTasksStr = state.tasks.today.length
+    ? state.tasks.today
+        .map(
+          (t) =>
+            `- [${t.id}] "${t.title}" (${t.estimatedMinutes}m, Status: ${t.status}, Priority: ${t.priority})`
+        )
+        .join("\n")
+    : "No tasks scheduled for today.";
+
+  const todayCalStr = state.calendar.today.length
+    ? state.calendar.today
+        .map(
+          (c) =>
+            `- "${c.title}" (${c.startTime ? String(c.startTime).split("T")[1]?.slice(0, 5) : "?"} to ${
+              c.endTime ? String(c.endTime).split("T")[1]?.slice(0, 5) : "?"
+            })`
+        )
+        .join("\n")
+    : "No calendar commitments today.";
+
+  const weakTopics = state.topics.filter(
+    (t) => t.status === "weak" || t.mastery < 0.6 || t.misconceptions.length > 0
+  );
+  const weakTopicsStr = weakTopics.length
+    ? weakTopics
+        .map(
+          (t) =>
+            `- [${t.id}] "${t.name}" (Mastery: ${(t.mastery * 100).toFixed(0)}%, Status: ${t.status}${
+              t.misconceptions.length ? `, Misconceptions: [${t.misconceptions.join("; ")}]` : ""
+            }${t.weaknesses.length ? `, Gaps: [${t.weaknesses.join("; ")}]` : ""})`
+        )
+        .join("\n")
+    : "All tracked topics are proficient or mastered.";
+
+  return `STUDENT STATE & WORKLOAD SNAPSHOT:
+- Daily Study Capacity: ${state.workload.dailyLimitMinutes} min (Current Today Load: ${state.workload.todayMinutes} min | Overloaded: ${state.workload.isOverloaded})
+- Overdue Tasks (${state.tasks.overdue.length}):
+${overdueStr}
+- Today's Tasks:
+${todayTasksStr}
+- Today's Calendar Commitments:
+${todayCalStr}
+- Active Goals:
+${goalsStr}
+- Learning Weaknesses & Misconceptions Needing Attention:
+${weakTopicsStr}`;
+}
+
+/**
+ * Produces a compact, token-efficient state summary tailored for the Feynman Agent.
+ */
+export function formatFeynmanStateContext(state: StudentState, activeTopicId?: string): string {
+  let activeTopicSummary = "No active topic locked.";
+  if (activeTopicId) {
+    const found = state.topics.find((t) => t.id === activeTopicId);
+    if (found) {
+      activeTopicSummary = `Topic "${found.name}" (Mastery: ${(found.mastery * 100).toFixed(0)}%, Status: ${found.status}${
+        found.misconceptions.length ? `, Misconceptions: [${found.misconceptions.join("; ")}]` : ""
+      }${found.weaknesses.length ? `, Gaps: [${found.weaknesses.join("; ")}]` : ""})`;
+    }
+  }
+
+  const weakTopics = state.topics.filter(
+    (t) => t.id !== activeTopicId && (t.status === "weak" || t.mastery < 0.6)
+  );
+  const otherWeakStr = weakTopics.length
+    ? weakTopics.map((t) => `"${t.name}" (${(t.mastery * 100).toFixed(0)}%)`).join(", ")
+    : "None";
+
+  return `STUDENT LEARNING CONTEXT:
+- Preferred Learning Style: ${state.user.learningStyle}
+- Current Active Topic: ${activeTopicSummary}
+- Other Known Weak Topics: ${otherWeakStr}`;
+}
+

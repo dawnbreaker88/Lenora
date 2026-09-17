@@ -1,6 +1,16 @@
-import { ai } from "../config/ai.js";
+import { ai, getModelCandidates, extractTokenUsage, type LLMUsage } from "../config/ai.js";
 import { env } from "../config/env.js";
-import { getStudentState, type StudentState } from "../services/student-state.service.js";
+import {
+  getStudentState,
+  formatPlannerStateContext,
+  type StudentState,
+} from "../services/student-state.service.js";
+import {
+  getOrCreateAgentSession,
+  appendSessionMessage,
+  getBoundedSessionMessages,
+} from "../services/agent-session.service.js";
+import { AgentLogger, createRequestId } from "../utils/logger.js";
 import { stateToolDeclarations, executeStateTool } from "./tools/state.tools.js";
 import { goalToolDeclarations, executeGoalTool } from "./tools/goal.tools.js";
 import { taskToolDeclarations, executeTaskTool } from "./tools/task.tools.js";
@@ -21,10 +31,23 @@ export interface PlannerAction {
   details?: unknown;
 }
 
+export interface PlannerAgentInput {
+  userId: string;
+  message: string;
+  sessionId?: string;
+  requestId?: string;
+}
+
 export interface PlannerResult {
+  sessionId: string;
   message: string;
   actions: PlannerAction[];
   studentState: StudentState;
+  metrics?: {
+    durationMs: number;
+    totalUsage: LLMUsage;
+    iterations: number;
+  };
 }
 
 const allFunctionDeclarations = [
@@ -41,139 +64,193 @@ async function dispatchToolCall(
   userId: string,
   name: string,
   args: Record<string, unknown>,
-  actions: PlannerAction[]
+  actions: PlannerAction[],
+  logger: AgentLogger
 ): Promise<unknown> {
-  if (name.includes("state")) {
-    const res = await executeStateTool(userId, name, args);
-    actions.push({
-      type: "state_inspected",
-      label: "Inspected current student state",
-    });
-    return res;
-  }
+  const toolStart = Date.now();
+  logger.toolCall(name, args);
 
-  if (name.includes("goal")) {
-    const res = await executeGoalTool(userId, name, args);
-    actions.push({
-      type: name === "create_goal" ? "goal_created" : "goal_updated",
-      label: (res as { message?: string })?.message || `Goal action: ${name}`,
-      details: res,
-    });
-    return res;
-  }
+  try {
+    let res: unknown;
+    if (name.includes("state")) {
+      res = await executeStateTool(userId, name, args);
+      actions.push({
+        type: "state_inspected",
+        label: "Inspected current student state snapshot",
+      });
+    } else if (name.includes("goal")) {
+      res = await executeGoalTool(userId, name, args);
+      actions.push({
+        type: name === "create_goal" ? "goal_created" : "goal_updated",
+        label: (res as { message?: string })?.message || `Goal action: ${name}`,
+        details: res,
+      });
+    } else if (name.includes("task")) {
+      res = await executeTaskTool(userId, name, args);
+      const actionType =
+        name === "create_task"
+          ? "task_created"
+          : name === "update_task"
+          ? "task_updated"
+          : "task_deleted";
+      actions.push({
+        type: actionType,
+        label: (res as { message?: string })?.message || `Task action: ${name}`,
+        details: res,
+      });
+    } else if (name.includes("calendar") || name.includes("conflicts")) {
+      res = await executeCalendarTool(userId, name, args);
+      let actionType: PlannerAction["type"] = "state_inspected";
+      let actionLabel = `Calendar action: ${name}`;
 
-  if (name.includes("task")) {
-    const res = await executeTaskTool(userId, name, args);
-    const actionType =
-      name === "create_task"
-        ? "task_created"
-        : name === "update_task"
-        ? "task_updated"
-        : "task_deleted";
-    actions.push({
-      type: actionType,
-      label: (res as { message?: string })?.message || `Task action: ${name}`,
-      details: res,
-    });
-    return res;
-  }
+      if (name === "create_calendar_event") {
+        actionType = "calendar_event_created";
+        actionLabel = (res as { message?: string })?.message || "Created calendar event";
+      } else if (name === "update_calendar_event") {
+        actionType = "calendar_event_updated";
+        actionLabel = (res as { message?: string })?.message || "Updated calendar event";
+      } else if (name === "delete_calendar_event") {
+        actionType = "calendar_event_deleted";
+        actionLabel = (res as { message?: string })?.message || "Deleted calendar event";
+      } else if (name === "get_calendar_events") {
+        actionType = "state_inspected";
+        const count =
+          (res as { count?: number })?.count ??
+          (res as { events?: unknown[] })?.events?.length ??
+          0;
+        actionLabel = `Checked calendar schedule (${count} events found)`;
+      } else if (name === "check_time_conflicts") {
+        actionType = "state_inspected";
+        actionLabel = (res as { hasConflicts?: boolean })?.hasConflicts
+          ? "Detected potential time conflict on calendar"
+          : "Verified no time conflicts on calendar";
+      }
 
-  if (name.includes("calendar") || name.includes("conflicts")) {
-    const res = await executeCalendarTool(userId, name, args);
-    let actionType: PlannerAction["type"] = "state_inspected";
-    let actionLabel = `Calendar action: ${name}`;
-
-    if (name === "create_calendar_event") {
-      actionType = "calendar_event_created";
-      actionLabel = (res as { message?: string })?.message || "Created calendar event";
-    } else if (name === "update_calendar_event") {
-      actionType = "calendar_event_updated";
-      actionLabel = (res as { message?: string })?.message || "Updated calendar event";
-    } else if (name === "delete_calendar_event") {
-      actionType = "calendar_event_deleted";
-      actionLabel = (res as { message?: string })?.message || "Deleted calendar event";
-    } else if (name === "get_calendar_events") {
-      actionType = "state_inspected";
-      const count = (res as { count?: number })?.count ?? (res as { events?: unknown[] })?.events?.length ?? 0;
-      actionLabel = `Checked calendar schedule (${count} events found)`;
-    } else if (name === "check_time_conflicts") {
-      actionType = "state_inspected";
-      actionLabel = (res as { hasConflicts?: boolean })?.hasConflicts
-        ? "Detected potential time conflict on calendar"
-        : "Verified no time conflicts on calendar";
+      actions.push({
+        type: actionType,
+        label: actionLabel,
+        details: res,
+      });
+    } else {
+      res = { success: false, error: `Unknown planner tool: ${name}` };
     }
 
-    actions.push({
-      type: actionType,
-      label: actionLabel,
-      details: res,
-    });
+    const duration = Date.now() - toolStart;
+    logger.toolSuccess(name, duration, (res as { message?: string })?.message);
     return res;
+  } catch (err) {
+    const duration = Date.now() - toolStart;
+    logger.toolFailure(name, duration, err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
-
-  throw new Error(`Unknown tool: ${name}`);
 }
 
 /**
- * Runs the Planner Agent with an interactive multi-step tool calling loop.
+ * Runs the Planner Agent with session continuity, compact state context,
+ * bounded conversation history, iteration bounds, and structured observability.
  */
-export async function runPlannerAgent(userId: string, userMessage: string): Promise<PlannerResult> {
+export async function runPlannerAgent(
+  userIdOrInput: string | PlannerAgentInput,
+  maybeMessage?: string,
+  maybeSessionId?: string
+): Promise<PlannerResult> {
+  const input: PlannerAgentInput =
+    typeof userIdOrInput === "string"
+      ? { userId: userIdOrInput, message: maybeMessage || "", sessionId: maybeSessionId }
+      : userIdOrInput;
+
+  const { userId, message } = input;
+  const requestId = input.requestId || createRequestId();
+
+  // 1. Resolve or create Planner session
+  const session = await getOrCreateAgentSession(userId, "planner", {
+    sessionId: input.sessionId,
+  });
+  const sessionId = session._id.toString();
+
+  const logger = new AgentLogger({
+    requestId,
+    sessionId,
+    userId,
+    agentType: "planner",
+  });
+  logger.start({ messageLength: message.length });
+
   const actions: PlannerAction[] = [];
   const now = new Date();
   const currentDateStr = now.toISOString().split("T")[0];
   const currentTimeStr = now.toLocaleTimeString("en-US", { hour12: false });
   const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
 
+  // 2. Load fresh compact student state snapshot
+  const initialStudentState = await getStudentState(userId);
+  const formattedStateContext = formatPlannerStateContext(initialStudentState);
+
+  // 3. Construct System Instructions
   const systemInstruction = `You are Lenora's Planner Agent.
 Your responsibility is to help the student manage their workload, goals, tasks, deadlines, and schedule.
 
-CURRENT TEMPORAL CONTEXT:
-- Today is: ${dayOfWeek}, ${currentDateStr} at ${currentTimeStr} (UTC representation: ${now.toISOString()})
-- Use this date/time reference to resolve relative dates accurately ("today", "tomorrow", "tonight", "next Friday").
+TEMPORAL CONTEXT:
+- Today is: ${dayOfWeek}, ${currentDateStr} at ${currentTimeStr} (UTC: ${now.toISOString()})
+- Resolve all relative dates ("today", "tomorrow", "tonight", "next Friday") against this reference.
+
+${formattedStateContext}
 
 CAPABILITIES & TOOLS:
-- get_student_state: Retrieve current student state, goals, tasks, workload, and calendar.
+- get_student_state: Retrieve fresh state snapshot if significant workload mutations have occurred.
 - create_goal / update_goal: Manage high-level learning goals and milestones.
 - create_task / update_task / delete_task: Manage actionable study/practice tasks with estimated duration.
 - get_calendar_events / create_calendar_event / update_calendar_event / delete_calendar_event / check_time_conflicts: Manage schedule blocks and detect overlapping time conflicts.
 
 CRITICAL OPERATING RULES:
-1. Do NOT merely describe a plan in text. When an action is required, USE THE AVAILABLE TOOLS to actually modify the student's workload in the database.
-2. Before making significant planning decisions, inspect the student's current state via get_student_state.
+1. Do NOT merely describe a plan in text. When an action is requested or required, USE THE AVAILABLE TOOLS to actually modify the student's workload in the database.
+2. Inspect current state and workload before making major additions.
 3. Respect existing commitments and avoid scheduling overlapping tasks.
-4. Consider deadlines, priority, and estimated workload. Break large goals into actionable, bite-sized tasks.
-5. Do not overload the student. If the user's requested workload is unrealistic (e.g., 6 hours on a busy day), identify the conflict, propose a manageable alternative, and schedule accordingly.
-6. After modifying the schedule or tasks, verify your changes and provide a clear, encouraging, and concise explanation of what you did.
+4. Consider deadlines, priority, and estimated workload. Break large goals into actionable, bite-sized tasks (30-60m).
+5. Do not overload the student. If the user's requested workload exceeds daily capacity, identify the conflict, propose a manageable alternative, and schedule accordingly.
+6. After modifying the schedule or tasks, verify your changes and provide a concise, clear explanation.
 7. Never claim that an action was completed unless the tool successfully executed it.
-8. When reviewing student state or when the student asks to adjust their schedule based on recent assessments/weaknesses, check the topics array from get_student_state (especially topics with status 'weak', low mastery, or recorded misconceptions). Proactively schedule targeted revision/practice tasks and calendar study blocks to remediate those weak concepts.`;
+8. When reviewing student state or when weak concepts/misconceptions exist, proactively schedule targeted revision tasks or calendar study blocks to remediate those weak areas.`;
 
-  // Initialize conversation contents
-  const contents: Array<Record<string, unknown>> = [
-    {
-      role: "user",
-      parts: [{ text: userMessage }],
-    },
-  ];
+  // 4. Build bounded multi-turn conversation history
+  const contents: Array<Record<string, unknown>> = [];
+  const pastMessages = getBoundedSessionMessages(session, env.AGENT_HISTORY_LIMIT);
+  for (const pm of pastMessages) {
+    contents.push({
+      role: pm.role === "user" ? "user" : "model",
+      parts: [{ text: pm.content }],
+    });
+  }
 
-  const maxIterations = 10;
+  // Add the current user prompt
+  contents.push({
+    role: "user",
+    parts: [{ text: message }],
+  });
+
+  // 5. Multi-Turn Tool Execution Loop with Model Fallback & Bounded Iterations
+  const candidateModels = getModelCandidates("reasoning");
+  const maxIterations = env.MAX_AGENT_ITERATIONS;
   let iteration = 0;
   let finalMessage = "";
+
   while (iteration < maxIterations) {
     iteration++;
+    logger.iteration(iteration, maxIterations);
 
     let response;
-    const candidateModels = [
-      env.GOOGLE_GENERATION_MODEL,
-      "gemini-3.5-flash-lite",
-      "gemini-2.5-flash",
-    ].filter(Boolean);
-
     let lastError: unknown;
+    let usedModel = candidateModels[0];
+
     for (const modelName of candidateModels) {
       let attempts = 0;
       while (attempts < 2) {
         try {
           attempts++;
+          const llmStart = Date.now();
           response = await ai.models.generateContent({
             model: modelName,
             contents: contents as never,
@@ -182,56 +259,52 @@ CRITICAL OPERATING RULES:
               tools: [{ functionDeclarations: allFunctionDeclarations as never }],
             },
           });
+          const duration = Date.now() - llmStart;
+          const usage = extractTokenUsage(response);
+          logger.llmCall(modelName, duration, usage);
+          usedModel = modelName;
           break;
         } catch (err) {
           lastError = err;
           console.warn(
-            `[Planner Agent] generateContent with model "${modelName}" attempt ${attempts} failed:`,
+            `[Planner Agent] generateContent with "${modelName}" attempt ${attempts} failed:`,
             err instanceof Error ? err.message : err
           );
-          await new Promise((r) => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, 800));
         }
       }
       if (response) break;
     }
 
     if (!response) {
-      throw lastError || new Error("Failed to get response from Gemini model after trying all fallback models.");
+      logger.fail(lastError);
+      throw (
+        lastError ||
+        new Error("Planner Agent: Failed to obtain response from Gemini models after retries.")
+      );
     }
 
     const candidate = response.candidates?.[0];
     const parts = candidate?.content?.parts || [];
-
-    // Check for function calls
     const functionCalls = response.functionCalls ?? [];
 
     if (!functionCalls || functionCalls.length === 0) {
-      // No more tool calls; extract final text
-      finalMessage = response.text || "Plan updated successfully.";
+      finalMessage = response.text || "Workload updated successfully.";
       break;
     }
 
-    // Add model candidate output to conversation history
+    // Add model tool invocation to conversation history
     contents.push({
       role: "model",
       parts,
     });
 
-    // Execute each function call and collect responses
+    // Execute each function call concurrently if safe or sequentially
     const responseParts: Array<Record<string, unknown>> = [];
 
     for (const call of functionCalls) {
       const callArgs = (call.args as Record<string, unknown>) || {};
-      let toolResult: unknown;
-
-      try {
-        toolResult = await dispatchToolCall(userId, call.name || "", callArgs, actions);
-      } catch (err) {
-        toolResult = {
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
+      const toolResult = await dispatchToolCall(userId, call.name || "", callArgs, actions, logger);
 
       responseParts.push({
         functionResponse: {
@@ -243,19 +316,36 @@ CRITICAL OPERATING RULES:
       });
     }
 
-    // Append function results to conversation
+    // Append function execution results to conversation
     contents.push({
       role: "user",
       parts: responseParts,
     });
   }
 
-  // Fetch final updated student state snapshot
-  const updatedState = await getStudentState(userId);
+  if (iteration >= maxIterations && !finalMessage) {
+    logger.iterationLimitReached(maxIterations);
+    finalMessage = "I've processed your planning request and updated your schedule as requested.";
+  }
+
+  // 6. Record interaction in AgentSession history
+  await appendSessionMessage(sessionId, userId, "user", message);
+  await appendSessionMessage(sessionId, userId, "model", finalMessage, `Actions: ${actions.length}`);
+
+  // 7. Fetch final updated student state snapshot
+  const finalState = await getStudentState(userId);
+  const metrics = logger.complete({ actionsCount: actions.length });
 
   return {
-    message: finalMessage || "Workload updated based on your request.",
+    sessionId,
+    message: finalMessage,
     actions,
-    studentState: updatedState,
+    studentState: finalState,
+    metrics: {
+      durationMs: metrics.durationMs,
+      totalUsage: metrics.totalUsage,
+      iterations: iteration,
+    },
   };
 }
+

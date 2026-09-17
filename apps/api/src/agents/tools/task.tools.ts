@@ -76,33 +76,71 @@ export async function executeTaskTool(
   name: string,
   args: Record<string, unknown>
 ) {
-  if (name === "create_task") {
-    const res = await createTask(userId, args as unknown as CreateTaskInput);
+  try {
+    if (name === "create_task") {
+      const title = String(args.title || "").trim();
+      const estimatedMinutes = Number(args.estimatedMinutes) || 30;
+
+      if (!title) {
+        return { success: false, error: "Task title is required." };
+      }
+
+      const res = (await createTask(userId, {
+        ...args,
+        title,
+        estimatedMinutes,
+      } as unknown as CreateTaskInput)) as Record<string, unknown>;
+
+      if (res.isDuplicate) {
+        return {
+          success: true,
+          task: res,
+          isDuplicate: true,
+          message: `Active task "${res.title}" already exists (ID: ${res._id}, ${res.estimatedMinutes}m); reused existing task to prevent duplicates.`,
+        };
+      }
+
+      return {
+        success: true,
+        task: res,
+        message: `Task "${res.title}" created with ID ${res._id} (${res.estimatedMinutes}m)`,
+      };
+    }
+
+    if (name === "update_task") {
+      const taskId = String(args.taskId || "").trim();
+      if (!taskId) {
+        return { success: false, error: "taskId is required for update_task." };
+      }
+
+      const { taskId: _, ...data } = args;
+      const res = await updateTask(userId, taskId, data as UpdateTaskInput);
+      return {
+        success: true,
+        task: res,
+        message: `Task "${res.title}" updated successfully`,
+      };
+    }
+
+    if (name === "delete_task") {
+      const taskId = String(args.taskId || "").trim();
+      if (!taskId) {
+        return { success: false, error: "taskId is required for delete_task." };
+      }
+
+      const res = await deleteTask(userId, taskId);
+      return {
+        success: true,
+        message: `Task "${res.title}" deleted successfully`,
+      };
+    }
+
+    return { success: false, error: `Unknown task tool: ${name}` };
+  } catch (err) {
     return {
-      success: true,
-      task: res,
-      message: `Task "${res.title}" created with ID ${res._id} (${res.estimatedMinutes}m)`,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
-
-  if (name === "update_task") {
-    const { taskId, ...data } = args;
-    const res = await updateTask(userId, taskId as string, data as UpdateTaskInput);
-    return {
-      success: true,
-      task: res,
-      message: `Task "${res.title}" updated successfully`,
-    };
-  }
-
-  if (name === "delete_task") {
-    const { taskId } = args;
-    const res = await deleteTask(userId, taskId as string);
-    return {
-      success: true,
-      message: `Task "${res.title}" deleted successfully`,
-    };
-  }
-
-  throw new Error(`Unknown task tool: ${name}`);
 }
+

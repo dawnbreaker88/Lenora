@@ -58,24 +58,71 @@ export async function executeGoalTool(
   name: string,
   args: Record<string, unknown>
 ) {
-  if (name === "create_goal") {
-    const res = await createGoal(userId, args as unknown as CreateGoalInput);
+  try {
+    if (name === "create_goal") {
+      const title = String(args.title || "").trim();
+      const category = args.category as CreateGoalInput["category"];
+
+      if (!title || !category) {
+        return { success: false, error: "title and category are required to create a goal." };
+      }
+
+      const res = (await createGoal(userId, {
+        ...args,
+        title,
+        category,
+      } as unknown as CreateGoalInput)) as Record<string, unknown>;
+
+      if (res.isDuplicate) {
+        return {
+          success: true,
+          goal: res,
+          isDuplicate: true,
+          message: `Active goal "${res.title}" already exists (ID: ${res._id}); reused existing goal.`,
+        };
+      }
+
+      return {
+        success: true,
+        goal: res,
+        message: `Goal "${res.title}" created successfully with ID ${res._id}`,
+      };
+    }
+
+    if (name === "update_goal") {
+      const goalId = String(args.goalId || "").trim();
+      if (!goalId) {
+        return { success: false, error: "goalId is required for update_goal." };
+      }
+
+      const { goalId: _, ...data } = args;
+      const res = await updateGoal(userId, goalId, data as UpdateGoalInput);
+      return {
+        success: true,
+        goal: res,
+        message: `Goal "${res.title}" updated successfully`,
+      };
+    }
+
+    if (name === "delete_goal") {
+      const goalId = String(args.goalId || "").trim();
+      if (!goalId) {
+        return { success: false, error: "goalId is required for delete_goal." };
+      }
+
+      const res = await deleteGoal(userId, goalId);
+      return {
+        success: true,
+        message: `Goal "${res.title}" deleted successfully`,
+      };
+    }
+
+    return { success: false, error: `Unknown goal tool: ${name}` };
+  } catch (err) {
     return {
-      success: true,
-      goal: res,
-      message: `Goal "${res.title}" created successfully with ID ${res._id}`,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
-
-  if (name === "update_goal") {
-    const { goalId, ...data } = args;
-    const res = await updateGoal(userId, goalId as string, data as UpdateGoalInput);
-    return {
-      success: true,
-      goal: res,
-      message: `Goal "${res.title}" updated successfully`,
-    };
-  }
-
-  throw new Error(`Unknown goal tool: ${name}`);
 }
+

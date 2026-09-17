@@ -11,7 +11,8 @@ import type { EvidenceType } from "../../models/LearningEvidence.js";
 export const feynmanToolDeclarations = [
   {
     name: "get_student_state",
-    description: "Retrieves the student's current learning profile, active goals, tasks, topic masteries, and weaknesses.",
+    description:
+      "Retrieves the student's current learning profile, active goals, and topic masteries. Use only when you need to understand broad student context or other topic relationships. Do not call repetitively within the same conversation turn.",
     parameters: {
       type: Type.OBJECT,
       properties: {},
@@ -19,17 +20,19 @@ export const feynmanToolDeclarations = [
   },
   {
     name: "search_study_material",
-    description: "Searches the student's uploaded notes and study materials using semantic vector search. Use this when the student asks about course notes or to ground your teaching in their actual curriculum.",
+    description:
+      "Search the authenticated student's uploaded study materials and notes using semantic vector search. USE WHEN: the student specifically asks about their notes, course definitions, lecture slides, or when course-specific context is required. DO NOT USE: for general conversational follow-ups, simple clarifications, or when the current session context already contains the necessary explanations.",
     parameters: {
       type: Type.OBJECT,
       properties: {
         query: {
           type: Type.STRING,
-          description: "Search query describing the concepts, definitions, or problems to retrieve from study notes.",
+          description:
+            "Focused search query describing the concept, definition, algorithm, or problem to retrieve from study notes.",
         },
         topK: {
           type: Type.INTEGER,
-          description: "Number of relevant note excerpts to retrieve (default: 4).",
+          description: "Number of relevant note excerpts to retrieve (1 to 3, default: 3).",
         },
       },
       required: ["query"],
@@ -37,7 +40,8 @@ export const feynmanToolDeclarations = [
   },
   {
     name: "get_topic_details",
-    description: "Retrieves or initializes details for a specific topic, including current mastery, known weaknesses, misconceptions, and study history.",
+    description:
+      "Retrieves or initializes details for a specific topic, including current mastery, known weaknesses, misconceptions, and study history. Use when switching topics or initializing a new learning focus.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -58,7 +62,8 @@ export const feynmanToolDeclarations = [
   },
   {
     name: "record_learning_evidence",
-    description: "Records structured evidence of a student's learning progress during a teaching session, including demonstrated understanding, misconceptions, or knowledge gaps, and updates topic mastery accordingly.",
+    description:
+      "Records structured evidence of a student's learning progress during an active learning session and deterministically updates topic mastery. USE WHEN: The student provides a substantive explanation, demonstrates understanding, applies a concept, or reveals a clear misconception/gap. DO NOT USE: For brief acknowledgments ('yes', 'ok', 'I see') or casual conversation.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -68,7 +73,7 @@ export const feynmanToolDeclarations = [
         },
         type: {
           type: Type.STRING,
-          description: "Type of learning evidence observed.",
+          description: "Type of observable learning evidence.",
           enum: [
             "demonstrated_understanding",
             "misconception",
@@ -80,7 +85,8 @@ export const feynmanToolDeclarations = [
         },
         description: {
           type: Type.STRING,
-          description: "Concise description of the specific insight, misconception, or gap observed (e.g., 'Confuses 2NF partial dependency with 3NF transitive dependency').",
+          description:
+            "Concise, observable summary of the specific insight, misconception, or gap (e.g., 'Confuses 2NF partial dependency with 3NF transitive dependency'). Do not include hidden chain of thought.",
         },
         confidence: {
           type: Type.NUMBER,
@@ -102,6 +108,7 @@ export async function executeFeynmanTool(
     case "get_student_state": {
       const state = await getStudentState(userId);
       return {
+        success: true,
         user: state.user,
         goals: state.goals,
         topics: state.topics,
@@ -111,9 +118,12 @@ export async function executeFeynmanTool(
 
     case "search_study_material": {
       const query = String(args.query || "").trim();
-      const topK = typeof args.topK === "number" ? args.topK : 4;
+      const rawTopK = typeof args.topK === "number" ? args.topK : 3;
+      // Bounded topK between 1 and 3 to preserve token budget
+      const topK = Math.max(1, Math.min(3, rawTopK));
+
       if (!query) {
-        return { success: false, message: "Query is required for searching study material." };
+        return { success: false, error: "Query is required for searching study material." };
       }
 
       const chunks = await retrieveRelevantChunks(userId, query, topK);
@@ -146,17 +156,18 @@ export async function executeFeynmanTool(
         return { success: true, topic };
       }
 
-      return { success: false, message: "Either topicId or topicName must be provided." };
+      return { success: false, error: "Either topicId or topicName must be provided." };
     }
 
     case "record_learning_evidence": {
       const topicId = String(args.topicId || "").trim();
       const type = args.type as EvidenceType;
       const description = String(args.description || "").trim();
-      const confidence = typeof args.confidence === "number" ? args.confidence : 0.85;
+      const rawConfidence = typeof args.confidence === "number" ? args.confidence : 0.85;
+      const confidence = Math.max(0, Math.min(1, rawConfidence));
 
       if (!topicId || !type || !description) {
-        return { success: false, message: "topicId, type, and description are required." };
+        return { success: false, error: "topicId, type, and description are required." };
       }
 
       const result = await updateTopicLearningState({
@@ -172,7 +183,7 @@ export async function executeFeynmanTool(
 
       return {
         success: true,
-        message: `Recorded evidence (${type}) and updated topic mastery to ${(result.topic.mastery * 100).toFixed(0)}%`,
+        message: `Recorded learning evidence (${type}) and updated topic mastery to ${(result.topic.mastery * 100).toFixed(0)}%`,
         topic: {
           id: result.topic._id.toString(),
           name: result.topic.name,
@@ -191,6 +202,7 @@ export async function executeFeynmanTool(
     }
 
     default:
-      throw new Error(`Unknown Feynman tool: ${toolName}`);
+      return { success: false, error: `Unknown Feynman tool: ${toolName}` };
   }
 }
+

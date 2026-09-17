@@ -24,9 +24,26 @@ export async function getGoals(userId: string) {
 }
 
 export async function createGoal(userId: string, input: CreateGoalInput) {
+  const userObjectId = new Types.ObjectId(userId);
+  const cleanTitle = input.title.trim();
+
+  // Duplicate protection: check if an active goal with identical title already exists
+  const existingGoal = await Goal.findOne({
+    userId: userObjectId,
+    title: { $regex: new RegExp(`^${cleanTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+    status: { $in: ["active", "paused"] },
+  }).lean();
+
+  if (existingGoal) {
+    return {
+      ...existingGoal,
+      isDuplicate: true,
+    };
+  }
+
   const goal = await Goal.create({
-    userId: new Types.ObjectId(userId),
-    title: input.title.trim(),
+    userId: userObjectId,
+    title: cleanTitle,
     category: input.category,
     description: input.description,
     priority: input.priority || "medium",
@@ -37,6 +54,7 @@ export async function createGoal(userId: string, input: CreateGoalInput) {
 
   return goal.toObject();
 }
+
 
 export async function updateGoal(userId: string, goalId: string, input: UpdateGoalInput) {
   const updateData: Record<string, unknown> = {};

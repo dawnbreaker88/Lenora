@@ -63,9 +63,10 @@ export async function appendSessionMessage(
         lastInteractionAt: new Date(),
       },
     },
-    { new: true }
+    { returnDocument: "after" }
   );
 }
+
 
 export async function getSessionById(userId: string, sessionId: string) {
   if (!Types.ObjectId.isValid(sessionId)) return null;

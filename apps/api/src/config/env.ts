@@ -6,10 +6,16 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   GOOGLE_GENAI_API_KEY: z.string().min(1, "GOOGLE_GENAI_API_KEY is required"),
   GOOGLE_EMBEDDING_MODEL: z.string().optional().transform((val) => (val && val.trim() ? val : "gemini-embedding-2")),
-  GOOGLE_GENERATION_MODEL: z.string().optional().transform((val) => (val && val.trim() ? val : "gemini-3.5-flash-lite")),
+  GOOGLE_GENERATION_MODEL: z.string().optional().transform((val) => (val && val.trim() ? val : "gemini-3.8-flash")),
+  FAST_MODEL: z.string().optional().transform((val) => (val && val.trim() ? val : "gemini-3.5-flash-lite")),
+  REASONING_MODEL: z.string().optional().transform((val) => (val && val.trim() ? val : "gemini-3.8-flash")),
+  MAX_AGENT_ITERATIONS: z.coerce.number().int().positive().default(5),
+  AGENT_HISTORY_LIMIT: z.coerce.number().int().positive().default(8),
   GOOGLE_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(768),
   MONGODB_VECTOR_INDEX: z.string().optional().transform((val) => (val && val.trim() ? val : "DocumentChunk")),
   NEXTAUTH_SECRET: z.string().min(1).optional(),
 });
 
 export const env = envSchema.parse(process.env);
+
+

@@ -88,65 +88,100 @@ export async function executeCalendarTool(
   name: string,
   args: Record<string, unknown>
 ) {
-  if (name === "get_calendar_events") {
-    const events = await getEvents(
-      userId,
-      args.startTime as string | undefined,
-      args.endTime as string | undefined
-    );
+  try {
+    if (name === "get_calendar_events") {
+      const events = await getEvents(
+        userId,
+        args.startTime as string | undefined,
+        args.endTime as string | undefined
+      );
+      return {
+        success: true,
+        count: events.length,
+        events,
+      };
+    }
+
+    if (name === "create_calendar_event") {
+      const res = await createEvent(userId, args as unknown as CreateCalendarEventInput);
+      const startStr = res.event.startTime instanceof Date ? res.event.startTime.toISOString() : String(res.event.startTime);
+      const endStr = res.event.endTime instanceof Date ? res.event.endTime.toISOString() : String(res.event.endTime);
+
+      if (res.isDuplicate) {
+        return {
+          success: true,
+          event: res.event,
+          isDuplicate: true,
+          message: `Calendar event "${res.event.title}" already scheduled (${startStr} to ${endStr}); reused existing slot to prevent duplicates.`,
+        };
+      }
+
+      return {
+        success: true,
+        event: res.event,
+        hasConflicts: (res.conflicts || []).length > 0,
+        conflicts: res.conflicts || [],
+        message: `Calendar event "${res.event.title}" scheduled (${startStr} to ${endStr})${
+          res.conflicts?.length ? ` (Note: ${res.conflicts.length} overlapping slot detected)` : ""
+        }`,
+      };
+    }
+
+    if (name === "update_calendar_event") {
+      const eventId = String(args.eventId || "").trim();
+      if (!eventId) {
+        return { success: false, error: "eventId is required for update_calendar_event." };
+      }
+
+      const { eventId: _, ...data } = args;
+      const res = await updateEvent(userId, eventId, data as UpdateCalendarEventInput);
+      return {
+        success: true,
+        event: res,
+        message: `Calendar event "${res.title}" updated successfully`,
+      };
+    }
+
+    if (name === "delete_calendar_event") {
+      const eventId = String(args.eventId || "").trim();
+      if (!eventId) {
+        return { success: false, error: "eventId is required for delete_calendar_event." };
+      }
+
+      const res = await deleteEvent(userId, eventId);
+      return {
+        success: true,
+        message: `Calendar event "${res.title}" removed successfully`,
+      };
+    }
+
+    if (name === "check_time_conflicts") {
+      const startTime = String(args.startTime || "").trim();
+      const endTime = String(args.endTime || "").trim();
+
+      if (!startTime || !endTime) {
+        return { success: false, error: "startTime and endTime are required to check conflicts." };
+      }
+
+      const conflicts = await findConflicts(userId, startTime, endTime);
+      return {
+        success: true,
+        hasConflicts: conflicts.length > 0,
+        conflicts: conflicts.map((c) => ({
+          id: c._id.toString(),
+          title: c.title,
+          startTime: c.startTime,
+          endTime: c.endTime,
+        })),
+      };
+    }
+
+    return { success: false, error: `Unknown calendar tool: ${name}` };
+  } catch (err) {
     return {
-      success: true,
-      count: events.length,
-      events,
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
-
-  if (name === "create_calendar_event") {
-    const res = await createEvent(userId, args as unknown as CreateCalendarEventInput);
-    return {
-      success: true,
-      event: res.event,
-      hasConflicts: res.conflicts.length > 0,
-      conflicts: res.conflicts,
-      message: `Calendar event "${res.event.title}" scheduled (${res.event.startTime.toISOString()} to ${res.event.endTime.toISOString()})`,
-    };
-  }
-
-  if (name === "update_calendar_event") {
-    const { eventId, ...data } = args;
-    const res = await updateEvent(userId, eventId as string, data as UpdateCalendarEventInput);
-    return {
-      success: true,
-      event: res,
-      message: `Calendar event "${res.title}" updated successfully`,
-    };
-  }
-
-  if (name === "delete_calendar_event") {
-    const { eventId } = args;
-    const res = await deleteEvent(userId, eventId as string);
-    return {
-      success: true,
-      message: `Calendar event "${res.title}" removed successfully`,
-    };
-  }
-
-  if (name === "check_time_conflicts") {
-    const conflicts = await findConflicts(
-      userId,
-      args.startTime as string,
-      args.endTime as string
-    );
-    return {
-      hasConflicts: conflicts.length > 0,
-      conflicts: conflicts.map((c) => ({
-        id: c._id.toString(),
-        title: c.title,
-        startTime: c.startTime,
-        endTime: c.endTime,
-      })),
-    };
-  }
-
-  throw new Error(`Unknown calendar tool: ${name}`);
 }
+

@@ -5,8 +5,8 @@ import { Topic } from "../models/Topic.js";
 import { FeynmanSession } from "../models/FeynmanSession.js";
 import { generateTest } from "../agents/test-generator.js";
 import { evaluateTest } from "../agents/evaluator.js";
-import { runPlannerAgent, type PlannerAction } from "../agents/planner.js";
 import { applyTestAssessment } from "./learner-state.service.js";
+
 
 export interface GenerateTestServiceInput {
   userId: string;
@@ -199,70 +199,6 @@ export async function submitTestAttempt(input: SubmitTestServiceInput) {
     assessment,
   });
 
-  // 5. Cross-Agent Loop: Pass updated state to Planner Agent if weaknesses/misconceptions exist
-  let plannerReview: {
-    triggered: boolean;
-    message: string;
-    actions: PlannerAction[];
-  } | null = null;
-
-  const weakConcepts = assessment.conceptAssessment
-    .filter((c) => c.status === "weak")
-    .map((c) => c.concept);
-
-  const hasUnresolvedIssues =
-    assessment.overallScore < 75 ||
-    (assessment.misconceptions && assessment.misconceptions.length > 0) ||
-    weakConcepts.length > 0 ||
-    stateUpdate.topic.status === "weak" ||
-    (stateUpdate.topic.weaknesses && stateUpdate.topic.weaknesses.length > 0) ||
-    stateUpdate.topic.mastery < 0.7;
-
-  if (input.autoReviewPlanner !== false && hasUnresolvedIssues) {
-    try {
-      const weaknessesList = stateUpdate.topic.weaknesses?.length
-        ? stateUpdate.topic.weaknesses.join(", ")
-        : weakConcepts.length
-        ? weakConcepts.join(", ")
-        : "Foundational conceptual gaps";
-      const misconceptionsList = assessment.misconceptions?.length
-        ? assessment.misconceptions.join("; ")
-        : "None specifically named";
-
-      const plannerPrompt = `[POST-ASSESSMENT STATE REVIEW]
-The student just completed a test on "${topicName}" with a score of ${assessment.overallScore}%.
-Current Topic Mastery: ${Math.round(stateUpdate.topic.mastery * 100)}% (Status: ${stateUpdate.topic.status}).
-Identified Weaknesses: ${weaknessesList}.
-Identified Misconceptions: ${misconceptionsList}.
-
-These issues were not fully resolved in the Feynman session.
-Please review the student's current state and schedule necessary revision tasks and calendar study blocks to remediate these weak concepts without creating scheduling conflicts.`;
-
-      const plannerResult = await runPlannerAgent(userId, plannerPrompt);
-      plannerReview = {
-        triggered: true,
-        message: plannerResult.message,
-        actions: plannerResult.actions,
-      };
-    } catch (plannerErr) {
-      console.warn(
-        `[Planner Auto-Review] Non-fatal error running Planner Agent after test:`,
-        plannerErr instanceof Error ? plannerErr.message : plannerErr
-      );
-      plannerReview = {
-        triggered: false,
-        message: "Planner review scheduled for next synchronization.",
-        actions: [],
-      };
-    }
-  } else if (input.autoReviewPlanner !== false && !hasUnresolvedIssues) {
-    plannerReview = {
-      triggered: false,
-      message: "Excellent performance! Mastery is solid, so no schedule adjustments or revision tasks were needed.",
-      actions: [],
-    };
-  }
-
   return {
     attemptId: attempt._id.toString(),
     testId: test._id.toString(),
@@ -276,7 +212,7 @@ Please review the student's current state and schedule necessary revision tasks 
       misconceptions: stateUpdate.topic.misconceptions,
     },
     assessment,
-    plannerReview,
     submittedAt: attempt.submittedAt,
   };
 }
+

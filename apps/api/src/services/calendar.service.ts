@@ -69,8 +69,10 @@ export async function getEvents(userId: string, start?: Date | string, end?: Dat
  * Creates a new calendar event scoped to the authenticated user.
  */
 export async function createEvent(userId: string, input: CreateCalendarEventInput) {
+  const userObjectId = new Types.ObjectId(userId);
   const start = new Date(input.startTime);
   const end = new Date(input.endTime);
+  const cleanTitle = input.title.trim();
 
   if (isNaN(start.getTime()) || isNaN(end.getTime())) {
     throw new Error("Invalid start or end date format");
@@ -80,11 +82,27 @@ export async function createEvent(userId: string, input: CreateCalendarEventInpu
     throw new Error("End time must be after start time");
   }
 
+  // Duplicate protection: check if an identical event already exists in this exact slot
+  const existingEvent = await CalendarEvent.findOne({
+    userId: userObjectId,
+    title: { $regex: new RegExp(`^${cleanTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+    startTime: start,
+    endTime: end,
+  }).lean();
+
+  if (existingEvent) {
+    return {
+      event: { ...existingEvent, isDuplicate: true },
+      conflicts: [],
+      isDuplicate: true,
+    };
+  }
+
   const conflicts = await findConflicts(userId, start, end);
 
   const event = await CalendarEvent.create({
-    userId: new Types.ObjectId(userId),
-    title: input.title,
+    userId: userObjectId,
+    title: cleanTitle,
     description: input.description,
     startTime: start,
     endTime: end,
@@ -103,6 +121,7 @@ export async function createEvent(userId: string, input: CreateCalendarEventInpu
     })),
   };
 }
+
 
 /**
  * Updates an existing calendar event scoped to the user.
@@ -132,8 +151,9 @@ export async function updateEvent(userId: string, eventId: string, input: Update
   const event = await CalendarEvent.findOneAndUpdate(
     { _id: new Types.ObjectId(eventId), userId: new Types.ObjectId(userId) },
     { $set: updateData },
-    { new: true }
+    { returnDocument: "after" }
   ).lean();
+
 
   if (!event) {
     throw new Error(`Calendar event ${eventId} not found`);
