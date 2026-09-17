@@ -1,0 +1,31 @@
+{
+  "name": "@lenora/api",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@google/genai": "^2.3.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mongodb": "^7.6.0",
+    "mongoose": "^9.10.1",
+    "multer": "^2.0.2",
+    "next-auth": "^4.24.15",
+    "pdf-parse": "^2.4.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
+    "@types/multer": "^2.0.0",
+    "eslint": "^9.39.5",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
