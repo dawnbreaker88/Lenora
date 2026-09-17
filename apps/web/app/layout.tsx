@@ -14,17 +14,31 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lenora",
-  description: "Lenora",
+  title: "Lenora — The Agentic Learning System for Students",
+  description: "Don't manage your studying. Let Lenora manage it. Lenora turns your goals, deadlines, workload, and learning material into an adaptive plan — then teaches, tests, and adjusts as you learn.",
+  keywords: ["Lenora", "adaptive learning", "AI student agent", "Planner", "Feynman technique", "Socratic learning", "study system"],
+  authors: [{ name: "Lenora Team" }],
+  openGraph: {
+    title: "Lenora — The Agentic Learning System for Students",
+    description: "Don't manage your studying. Let Lenora manage it. An adaptive learning system powered by Planner, Feynman, and Learner agents.",
+    type: "website",
+  },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} dark scroll-smooth antialiased`}
     >
-      <body className="min-h-full flex flex-col"><Providers>{children}</Providers></body>
+      <body className="min-h-screen bg-[#0d0e15] text-[#ededf0] font-sans selection:bg-[#5683da]/30 selection:text-white">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
+

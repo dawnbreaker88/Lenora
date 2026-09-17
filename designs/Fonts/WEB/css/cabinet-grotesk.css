@@ -1,0 +1,22 @@
+/**
+* @license
+*
+* Font Family: Cabinet Grotesk
+* Designed by: ITF
+* URL: https://www.fontshare.com/fonts/cabinet-grotesk
+* © 2026 Indian Type Foundry
+*
+* Cabinet Grotesk Medium 
+
+*
+*/
+@font-face {
+  font-family: 'CabinetGrotesk-Medium';
+  src: url('../fonts/CabinetGrotesk-Medium.woff2') format('woff2'),
+       url('../fonts/CabinetGrotesk-Medium.woff') format('woff'),
+       url('../fonts/CabinetGrotesk-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-display: swap;
+  font-style: normal;
+}
+
