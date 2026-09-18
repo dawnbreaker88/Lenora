@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { Topic } from "../models/Topic.js";
 import { Assessment } from "../models/Assesment.js";
 import { LearningEvidence } from "../models/LearningEvidence.js";
+import { EventService } from "../events/event.service.js";
 import type { ITestAssessment } from "../models/TestAttempt.js";
 
 export interface ApplyAssessmentInput {
@@ -134,6 +135,24 @@ export async function applyTestAssessment(input: ApplyAssessmentInput) {
       source: "assessment",
     });
   }
+
+  // Emit KNOWLEDGE_STATE_UPDATED for meaningful learning state changes
+  EventService.emitEvent({
+    userId,
+    type: "KNOWLEDGE_STATE_UPDATED",
+    source: "learner",
+    entityType: "topic",
+    entityId: topic._id.toString(),
+    metadata: {
+      topicName: topic.name,
+      mastery: topic.mastery,
+      confidence: topic.confidence,
+      status: topic.status,
+      weaknesses: topic.weaknesses,
+      misconceptions: topic.misconceptions,
+      testId,
+    },
+  }).catch((err) => console.warn("Failed to emit KNOWLEDGE_STATE_UPDATED event:", err));
 
   return {
     topic,

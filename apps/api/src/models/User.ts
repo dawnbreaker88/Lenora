@@ -69,6 +69,32 @@ const UserSchema = new Schema(
         ],
         default: "unknown",
       },
+
+      feynmanInstructions: {
+        type: String,
+        default: "",
+      },
+
+      availableSlots: [
+        {
+          day: {
+            type: String,
+            default: "all",
+          },
+          startTime: {
+            type: String,
+            default: "14:00",
+          },
+          endTime: {
+            type: String,
+            default: "18:00",
+          },
+          label: {
+            type: String,
+            default: "Study Window",
+          },
+        },
+      ],
     },
 
     onboardingCompleted: {
@@ -76,10 +102,43 @@ const UserSchema = new Schema(
       default: false,
     },
 
+    googleCalendar: {
+      connected: {
+        type: Boolean,
+        default: false,
+      },
+      refreshToken: {
+        type: String,
+        select: false,
+      },
+      accessToken: {
+        type: String,
+        select: false,
+      },
+      expiryDate: {
+        type: Number,
+        select: false,
+      },
+      calendarId: {
+        type: String,
+        default: "primary",
+      },
+      scopes: [{
+        type: String,
+      }],
+      connectedAt: {
+        type: Date,
+      },
+      updatedAt: {
+        type: Date,
+      },
+    },
+
     lastActiveAt: {
       type: Date,
       default: Date.now,
     },
+
   },
   {
     timestamps: true,

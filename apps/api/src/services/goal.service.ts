@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { Goal } from "../models/Goals.js";
+import { EventService } from "../events/event.service.js";
 
 export interface CreateGoalInput {
   title: string;
@@ -52,6 +53,20 @@ export async function createGoal(userId: string, input: CreateGoalInput) {
     progress: 0,
   });
 
+  EventService.emitEvent({
+    userId,
+    type: "GOAL_CREATED",
+    source: "user",
+    entityType: "goal",
+    entityId: goal._id.toString(),
+    metadata: {
+      title: goal.title,
+      category: goal.category,
+      priority: goal.priority,
+      targetDate: goal.targetDate,
+    },
+  }).catch((err) => console.warn("Failed to emit GOAL_CREATED event:", err));
+
   return goal.toObject();
 }
 
@@ -78,6 +93,20 @@ export async function updateGoal(userId: string, goalId: string, input: UpdateGo
   if (!goal) {
     throw new Error(`Goal ${goalId} not found`);
   }
+
+  EventService.emitEvent({
+    userId,
+    type: "GOAL_UPDATED",
+    source: "user",
+    entityType: "goal",
+    entityId: goalId,
+    metadata: {
+      title: goal.title,
+      status: goal.status,
+      priority: goal.priority,
+      progress: goal.progress,
+    },
+  }).catch((err) => console.warn("Failed to emit GOAL_UPDATED event:", err));
 
   return goal;
 }

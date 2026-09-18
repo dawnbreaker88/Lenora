@@ -4,14 +4,24 @@ import {
   deleteEvent,
   getEvents,
   findConflicts,
+  findAvailableSlots,
+  getCalendarStatus,
   type CreateCalendarEventInput,
   type UpdateCalendarEventInput,
 } from "../../services/calendar.service.js";
 
 export const calendarToolDeclarations = [
   {
+    name: "check_calendar_connection",
+    description: "Checks whether Google Calendar is connected or internal calendar is in use.",
+    parameters: {
+      type: "OBJECT",
+      properties: {},
+    },
+  },
+  {
     name: "get_calendar_events",
-    description: "Retrieves calendar events and commitments within a date range to check availability.",
+    description: "Retrieves calendar events and commitments within a date range to inspect availability and schedule constraints.",
     parameters: {
       type: "OBJECT",
       properties: {
@@ -21,27 +31,40 @@ export const calendarToolDeclarations = [
     },
   },
   {
-    name: "create_calendar_event",
-    description: "Schedules a study block or commitment on the student's calendar, checking for conflicts.",
+    name: "find_available_slots",
+    description: "Calculates available, unoccupied time slots of requested duration between startDate and endDate.",
     parameters: {
       type: "OBJECT",
       properties: {
-        title: { type: "STRING", description: "Event title (e.g. 'DBMS Study Session — Indexing')" },
+        startDate: { type: "STRING", description: "Start date/time in ISO format" },
+        endDate: { type: "STRING", description: "End date/time in ISO format" },
+        durationMinutes: { type: "NUMBER", description: "Required study block duration in minutes (e.g. 45, 60, 90)" },
+      },
+      required: ["startDate", "endDate", "durationMinutes"],
+    },
+  },
+  {
+    name: "create_calendar_event",
+    description: "Schedules a study block or commitment on the student's calendar (Google Calendar if connected). Automatically checks for conflicts.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        title: { type: "STRING", description: "Event title (e.g. 'DBMS — Normalization Study Block')" },
         startTime: { type: "STRING", description: "Start time in ISO format" },
         endTime: { type: "STRING", description: "End time in ISO format" },
-        description: { type: "STRING", description: "Event description" },
+        description: { type: "STRING", description: "Event description with study topics or objectives" },
         type: {
           type: "STRING",
           enum: ["study", "class", "exam", "assignment", "personal", "other"],
         },
-        taskId: { type: "STRING", description: "Associated Task ID if scheduling a specific task" },
+        taskId: { type: "STRING", description: "Associated Task ID if scheduling an existing task" },
       },
       required: ["title", "startTime", "endTime"],
     },
   },
   {
     name: "update_calendar_event",
-    description: "Reschedules or updates an existing calendar event.",
+    description: "Reschedules or updates an existing calendar event. Keeps linked tasks synchronized.",
     parameters: {
       type: "OBJECT",
       properties: {
@@ -60,7 +83,7 @@ export const calendarToolDeclarations = [
   },
   {
     name: "delete_calendar_event",
-    description: "Cancels/removes a calendar event.",
+    description: "Cancels or removes a Lenora-created calendar event. Note: External events cannot be deleted.",
     parameters: {
       type: "OBJECT",
       properties: {
@@ -89,6 +112,14 @@ export async function executeCalendarTool(
   args: Record<string, unknown>
 ) {
   try {
+    if (name === "check_calendar_connection") {
+      const status = await getCalendarStatus(userId);
+      return {
+        success: true,
+        ...status,
+      };
+    }
+
     if (name === "get_calendar_events") {
       const events = await getEvents(
         userId,
@@ -98,7 +129,33 @@ export async function executeCalendarTool(
       return {
         success: true,
         count: events.length,
-        events,
+        events: events.map((e) => ({
+          id: e.id,
+          title: e.title,
+          start: e.startTime instanceof Date ? e.startTime.toISOString() : String(e.startTime),
+          end: e.endTime instanceof Date ? e.endTime.toISOString() : String(e.endTime),
+          source: e.source,
+          status: e.status,
+          type: e.type,
+          taskId: e.taskId,
+        })),
+      };
+    }
+
+    if (name === "find_available_slots") {
+      const startDate = String(args.startDate || "").trim();
+      const endDate = String(args.endDate || "").trim();
+      const durationMinutes = Number(args.durationMinutes) || 60;
+
+      const slots = await findAvailableSlots(userId, startDate, endDate, durationMinutes);
+      return {
+        success: true,
+        count: slots.length,
+        slots: slots.map((s) => ({
+          start: s.start.toISOString(),
+          end: s.end.toISOString(),
+          durationMinutes,
+        })),
       };
     }
 
@@ -107,18 +164,16 @@ export async function executeCalendarTool(
       const startStr = res.event.startTime instanceof Date ? res.event.startTime.toISOString() : String(res.event.startTime);
       const endStr = res.event.endTime instanceof Date ? res.event.endTime.toISOString() : String(res.event.endTime);
 
-      if (res.isDuplicate) {
-        return {
-          success: true,
-          event: res.event,
-          isDuplicate: true,
-          message: `Calendar event "${res.event.title}" already scheduled (${startStr} to ${endStr}); reused existing slot to prevent duplicates.`,
-        };
-      }
-
       return {
         success: true,
-        event: res.event,
+        event: {
+          id: res.event.id,
+          title: res.event.title,
+          start: startStr,
+          end: endStr,
+          provider: res.event.provider,
+          source: res.event.source,
+        },
         hasConflicts: (res.conflicts || []).length > 0,
         conflicts: res.conflicts || [],
         message: `Calendar event "${res.event.title}" scheduled (${startStr} to ${endStr})${
@@ -137,7 +192,12 @@ export async function executeCalendarTool(
       const res = await updateEvent(userId, eventId, data as UpdateCalendarEventInput);
       return {
         success: true,
-        event: res,
+        event: {
+          id: res.id,
+          title: res.title,
+          start: res.startTime instanceof Date ? res.startTime.toISOString() : String(res.startTime),
+          end: res.endTime instanceof Date ? res.endTime.toISOString() : String(res.endTime),
+        },
         message: `Calendar event "${res.title}" updated successfully`,
       };
     }
@@ -148,10 +208,10 @@ export async function executeCalendarTool(
         return { success: false, error: "eventId is required for delete_calendar_event." };
       }
 
-      const res = await deleteEvent(userId, eventId);
+      await deleteEvent(userId, eventId);
       return {
         success: true,
-        message: `Calendar event "${res.title}" removed successfully`,
+        message: `Calendar event removed successfully`,
       };
     }
 
@@ -168,20 +228,36 @@ export async function executeCalendarTool(
         success: true,
         hasConflicts: conflicts.length > 0,
         conflicts: conflicts.map((c) => ({
-          id: c._id.toString(),
+          id: c.id,
           title: c.title,
           startTime: c.startTime,
           endTime: c.endTime,
+          source: c.source,
         })),
       };
     }
 
     return { success: false, error: `Unknown calendar tool: ${name}` };
-  } catch (err) {
+  } catch (err: any) {
+    if (err.code === "EXTERNAL_EVENT_PROTECTED") {
+      return {
+        success: false,
+        code: "EXTERNAL_EVENT_PROTECTED",
+        error: "This event is an external calendar event (e.g. personal appointment or lecture). Lenora protects external events from automatic deletion.",
+      };
+    }
+
+    if (err.code === "CALENDAR_REAUTH_REQUIRED") {
+      return {
+        success: false,
+        code: "CALENDAR_REAUTH_REQUIRED",
+        error: "Google Calendar authorization has expired or was revoked. Please ask the user to reconnect Google Calendar in the Calendar tab.",
+      };
+    }
+
     return {
       success: false,
       error: err instanceof Error ? err.message : String(err),
     };
   }
 }
-

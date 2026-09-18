@@ -10,6 +10,7 @@ import { stateRouter } from "./routes/state.routes.js";
 import { taskRouter } from "./routes/task.routes.js";
 import { testRouter } from "./routes/test.routes.js";
 import { topicRouter } from "./routes/topic.routes.js";
+import { eventRouter } from "./routes/event.routes.js";
 
 export function createApp() {
   const app = express();
@@ -31,6 +32,7 @@ export function createApp() {
   app.use("/api/tasks", taskRouter);
   app.use("/api/tests", testRouter);
   app.use("/api/topics", topicRouter);
+  app.use("/api/events", eventRouter);
 
   app.get("/api/health", (_request: Request, response: Response) => {
     response.status(isDatabaseConnected() ? 200 : 503).json({

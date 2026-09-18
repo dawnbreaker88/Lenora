@@ -1,0 +1,152 @@
+.prose {
+  max-width: 100%;
+  font-size: 13.5px;
+  line-height: 22px;
+  color: #d0d6e0;
+  overflow-wrap: anywhere;
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  color: #ffffff;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin-top: 18px;
+  margin-bottom: 8px;
+}
+
+.prose h1 {
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.prose h2 {
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.prose h3 {
+  font-size: 14px;
+  line-height: 19px;
+}
+
+.prose p {
+  margin-bottom: 12px;
+  line-height: 22px;
+}
+
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+.prose strong {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.prose em {
+  font-style: italic;
+  color: #e6edf3;
+}
+
+.prose ul {
+  list-style-type: disc;
+  margin-top: 6px;
+  margin-bottom: 12px;
+  padding-left: 20px;
+}
+
+.prose ol {
+  list-style-type: decimal;
+  margin-top: 6px;
+  margin-bottom: 12px;
+  padding-left: 20px;
+}
+
+.prose li {
+  margin-bottom: 4px;
+  line-height: 21px;
+}
+
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: #e4f222;
+  background: #161718;
+  border: 1px solid #23252a;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.prose pre {
+  margin-top: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #08090a;
+  border: 1px solid #23252a;
+  overflow-x: auto;
+}
+
+.prose pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #e6edf3;
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.prose blockquote {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding-left: 14px;
+  border-left: 2px solid #383b3f;
+  color: #8a8f98;
+  font-style: italic;
+}
+
+.prose hr {
+  border: none;
+  border-top: 1px solid #23252a;
+  margin: 16px 0;
+}
+
+.prose a {
+  color: #93c5fd;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.15s ease;
+}
+
+.prose a:hover {
+  color: #bfdbfe;
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 13px;
+  border: 1px solid #23252a;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.prose th,
+.prose td {
+  padding: 8px 12px;
+  border: 1px solid #23252a;
+  text-align: left;
+}
+
+.prose th {
+  background: #161718;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.prose tr:nth-child(even) {
+  background: #0d0e0f;
+}
+

@@ -8,6 +8,8 @@ export interface IAgentMessage {
   content: string;
   timestamp: Date;
   toolSummary?: string;
+  actions?: Array<{ type: string; label: string; details?: unknown }>;
+  evidence?: Array<{ type: string; description: string }>;
 }
 
 export interface IAgentSessionContext {
@@ -32,6 +34,7 @@ export interface IAgentSession extends Document {
   userId: Types.ObjectId;
   agentType: AgentType;
   status: SessionStatus;
+  title: string;
   context: IAgentSessionContext;
   messages: IAgentMessage[];
   startedAt: Date;
@@ -53,6 +56,11 @@ const AgentSessionSchema = new Schema(
       enum: ["planner", "feynman"],
       required: true,
       index: true,
+    },
+    title: {
+      type: String,
+      trim: true,
+      default: "New Conversation",
     },
     status: {
       type: String,
@@ -99,6 +107,14 @@ const AgentSessionSchema = new Schema(
         },
         toolSummary: {
           type: String,
+        },
+        actions: {
+          type: [Schema.Types.Mixed],
+          default: undefined,
+        },
+        evidence: {
+          type: [Schema.Types.Mixed],
+          default: undefined,
         },
       },
     ],

@@ -100,22 +100,46 @@ export async function appendSessionMessage(
   userId: string,
   role: "user" | "model",
   content: string,
-  toolSummary?: string
+  toolSummary?: string,
+  actions?: unknown[],
+  evidence?: unknown[]
 ): Promise<IAgentSession | null> {
   if (!Types.ObjectId.isValid(sessionId)) return null;
 
+  const updateSet: Record<string, unknown> = {
+    lastActiveAt: new Date(),
+  };
+
+  // If user role and session has default title, set a meaningful title from prompt
+  if (role === "user") {
+    const existing = await AgentSession.findOne({
+      _id: new Types.ObjectId(sessionId),
+      userId: new Types.ObjectId(userId),
+    });
+    if (existing && (!existing.title || existing.title === "New Conversation")) {
+      const trimmed = content.trim().replace(/\n+/g, " ");
+      const autoTitle = trimmed.length > 40 ? trimmed.substring(0, 37) + "..." : trimmed;
+      if (autoTitle) {
+        updateSet.title = autoTitle;
+      }
+    }
+  }
+
+  const messageDoc: Record<string, unknown> = {
+    role,
+    content,
+    timestamp: new Date(),
+  };
+
+  if (toolSummary) messageDoc.toolSummary = toolSummary;
+  if (actions && actions.length > 0) messageDoc.actions = actions;
+  if (evidence && evidence.length > 0) messageDoc.evidence = evidence;
+
   const updateDoc: Record<string, unknown> = {
     $push: {
-      messages: {
-        role,
-        content,
-        timestamp: new Date(),
-        toolSummary,
-      },
+      messages: messageDoc,
     },
-    $set: {
-      lastActiveAt: new Date(),
-    },
+    $set: updateSet,
   };
 
   return AgentSession.findOneAndUpdate(
@@ -205,4 +229,88 @@ export async function getSessionById(
     _id: new Types.ObjectId(sessionId),
     userId: new Types.ObjectId(userId),
   });
+}
+
+/**
+ * Lists all sessions for a user filtered by agentType, ordered by recency.
+ */
+export async function listUserSessions(
+  userId: string,
+  agentType?: AgentType
+): Promise<IAgentSession[]> {
+  const query: Record<string, unknown> = {
+    userId: new Types.ObjectId(userId),
+  };
+  if (agentType) {
+    query.agentType = agentType;
+  }
+  return AgentSession.find(query)
+    .sort({ updatedAt: -1, lastActiveAt: -1 })
+    .select("_id title agentType status updatedAt createdAt lastActiveAt messages")
+    .lean();
+}
+
+/**
+ * Explicitly creates a new named session for an agent type.
+ */
+export async function createSession(
+  userId: string,
+  agentType: AgentType,
+  title?: string
+): Promise<IAgentSession> {
+  return AgentSession.create({
+    userId: new Types.ObjectId(userId),
+    agentType,
+    title: title?.trim() || "New Conversation",
+    status: "active",
+    context: {
+      knownWeaknesses: [],
+      recentEvidence: [],
+    },
+    messages: [],
+    startedAt: new Date(),
+    lastActiveAt: new Date(),
+  });
+}
+
+/**
+ * Renames a session.
+ */
+export async function renameSession(
+  userId: string,
+  sessionId: string,
+  title: string
+): Promise<IAgentSession | null> {
+  if (!Types.ObjectId.isValid(sessionId)) return null;
+
+  return AgentSession.findOneAndUpdate(
+    {
+      _id: new Types.ObjectId(sessionId),
+      userId: new Types.ObjectId(userId),
+    },
+    {
+      $set: {
+        title: title.trim() || "New Conversation",
+        lastActiveAt: new Date(),
+      },
+    },
+    { returnDocument: "after" }
+  );
+}
+
+/**
+ * Deletes a session.
+ */
+export async function deleteSession(
+  userId: string,
+  sessionId: string
+): Promise<boolean> {
+  if (!Types.ObjectId.isValid(sessionId)) return false;
+
+  const result = await AgentSession.findOneAndDelete({
+    _id: new Types.ObjectId(sessionId),
+    userId: new Types.ObjectId(userId),
+  });
+
+  return Boolean(result);
 }

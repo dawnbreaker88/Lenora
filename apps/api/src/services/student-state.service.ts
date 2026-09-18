@@ -15,6 +15,8 @@ export interface StudentState {
     dailyStudyMinutes: number;
     sessionLengthMinutes: number;
     learningStyle: string;
+    feynmanInstructions?: string;
+    availableSlots?: Array<{ day: string; startTime: string; endTime: string; label?: string }>;
   };
   goals: Array<{
     id: string;
@@ -37,6 +39,7 @@ export interface StudentState {
     upcomingMinutes: number;
     overdueCount: number;
     dailyLimitMinutes: number;
+    availableSlots?: Array<{ day: string; startTime: string; endTime: string; label?: string }>;
     isOverloaded: boolean;
   };
   calendar: {
@@ -100,22 +103,14 @@ export async function getStudentState(userId: string): Promise<StudentState> {
     const isCompleted = t.status === "completed";
     const isSkipped = t.status === "skipped";
 
-    if (isCompleted && t.completedAt && new Date(t.completedAt) >= twoDaysAgo) {
-      completedRecently.push({
-        id: t._id.toString(),
-        title: t.title,
-        estimatedMinutes: t.estimatedMinutes,
-        completedAt: t.completedAt.toISOString(),
-      });
-      continue;
-    }
-
-    if (isCompleted || isSkipped) continue;
+    if (isSkipped) continue;
 
     const due = t.dueAt ? new Date(t.dueAt) : null;
     const scheduled = t.scheduledStart ? new Date(t.scheduledStart) : null;
+    const completedAtDate = t.completedAt ? new Date(t.completedAt) : null;
 
     const taskSummary = {
+      _id: t._id.toString(),
       id: t._id.toString(),
       title: t.title,
       description: t.description,
@@ -126,8 +121,22 @@ export async function getStudentState(userId: string): Promise<StudentState> {
       dueAt: t.dueAt?.toISOString(),
       scheduledStart: t.scheduledStart?.toISOString(),
       scheduledEnd: t.scheduledEnd?.toISOString(),
+      completedAt: t.completedAt?.toISOString(),
       goalId: t.goalId?.toString(),
     };
+
+    if (isCompleted) {
+      if (completedAtDate && completedAtDate >= twoDaysAgo) {
+        completedRecently.push(taskSummary);
+      }
+      // If completed today or originally scheduled for today, retain in today's task list as completed
+      const isCompletedToday = completedAtDate && completedAtDate >= startOfToday && completedAtDate <= endOfToday;
+      const isScheduledToday = scheduled && scheduled >= startOfToday && scheduled <= endOfToday;
+      if (isCompletedToday || isScheduledToday) {
+        todayTasks.push(taskSummary);
+      }
+      continue;
+    }
 
     if (due && due < startOfToday) {
       overdue.push(taskSummary);
@@ -180,6 +189,10 @@ export async function getStudentState(userId: string): Promise<StudentState> {
       dailyStudyMinutes,
       sessionLengthMinutes,
       learningStyle: userDoc?.preferences?.learningStyle || "mixed",
+      feynmanInstructions: (userDoc?.preferences as { feynmanInstructions?: string })?.feynmanInstructions || "",
+      availableSlots: userDoc?.preferences?.availableSlots || [
+        { day: "all", startTime: "14:00", endTime: "18:00", label: "Study Window" },
+      ],
     },
     goals: goals.map((g) => ({
       id: g._id.toString(),
@@ -202,6 +215,9 @@ export async function getStudentState(userId: string): Promise<StudentState> {
       upcomingMinutes,
       overdueCount: overdue.length,
       dailyLimitMinutes: dailyStudyMinutes,
+      availableSlots: userDoc?.preferences?.availableSlots || [
+        { day: "all", startTime: "14:00", endTime: "18:00", label: "Study Window" },
+      ],
       isOverloaded: todayMinutes > dailyStudyMinutes,
     },
     calendar: {
@@ -284,8 +300,16 @@ export function formatPlannerStateContext(state: StudentState): string {
         .join("\n")
     : "All tracked topics are proficient or mastered.";
 
+  const userSlots = state.user.availableSlots || [];
+  const slotsStr = userSlots.length
+    ? userSlots
+        .map((s) => `- ${s.day.toUpperCase()} · ${s.startTime} to ${s.endTime}${s.label ? ` (${s.label})` : ""}`)
+        .join("\n")
+    : "- Flexible / Unrestricted availability";
+
   return `STUDENT STATE & WORKLOAD SNAPSHOT:
-- Daily Study Capacity: ${state.workload.dailyLimitMinutes} min (Current Today Load: ${state.workload.todayMinutes} min | Overloaded: ${state.workload.isOverloaded})
+- Student Designated Available Slots (SCHEDULE WITHIN THESE WINDOWS ONLY):
+${slotsStr}
 - Overdue Tasks (${state.tasks.overdue.length}):
 ${overdueStr}
 - Today's Tasks:

@@ -1,5 +1,7 @@
 import { Types } from "mongoose";
 import { Task } from "../models/Task.js";
+import { CalendarEvent } from "../models/CalendarEvent.js";
+import { EventService } from "../events/event.service.js";
 
 export interface CreateTaskInput {
   title: string;
@@ -79,9 +81,51 @@ export async function createTask(userId: string, input: CreateTaskInput) {
     calendarEventId: input.calendarEventId,
   });
 
+  // Automatically create a corresponding CalendarEvent if scheduled or due
+  const startTime = input.scheduledStart
+    ? new Date(input.scheduledStart)
+    : input.dueAt
+      ? new Date(input.dueAt)
+      : undefined;
+
+  if (startTime && !isNaN(startTime.getTime())) {
+    const estimatedMinutes = input.estimatedMinutes || 30;
+    const endTime = input.scheduledEnd
+      ? new Date(input.scheduledEnd)
+      : new Date(startTime.getTime() + estimatedMinutes * 60000);
+
+    try {
+      const { createEvent } = await import("./calendar.service.js");
+      const { event } = await createEvent(userId, {
+        title: cleanTitle,
+        description: input.description || `Estimated: ${estimatedMinutes}m · Priority: ${input.priority || "medium"}`,
+        startTime,
+        endTime,
+        type: input.type === "assignment" ? "assignment" : input.type === "leetcode" ? "personal" : "study",
+        taskId: task._id.toString(),
+      });
+      task.calendarEventId = event.id;
+      await task.save();
+    } catch (calErr) {
+      console.warn("Could not sync task to calendar:", calErr);
+    }
+  }
+
+  EventService.emitEvent({
+    userId,
+    type: "TASK_CREATED",
+    source: (input.source as any) || "user",
+    entityType: "task",
+    entityId: task._id.toString(),
+    metadata: {
+      taskTitle: task.title,
+      estimatedMinutes: task.estimatedMinutes,
+      priority: task.priority,
+    },
+  }).catch((err) => console.warn("Failed to emit TASK_CREATED event:", err));
+
   return task.toObject();
 }
-
 
 export async function updateTask(userId: string, taskId: string, input: UpdateTaskInput) {
   const updateData: Record<string, unknown> = {};
@@ -126,6 +170,73 @@ export async function updateTask(userId: string, taskId: string, input: UpdateTa
     throw new Error(`Task ${taskId} not found`);
   }
 
+  // Keep calendar event in sync
+  try {
+    const taskObjId = new Types.ObjectId(taskId);
+    const userObjId = new Types.ObjectId(userId);
+    const existingCalEvent = await CalendarEvent.findOne({ userId: userObjId, taskId: taskObjId });
+
+    const newStart = task.scheduledStart || task.dueAt;
+    if (newStart) {
+      const startTime = new Date(newStart);
+      const estimatedMinutes = task.estimatedMinutes || 30;
+      const endTime = task.scheduledEnd
+        ? new Date(task.scheduledEnd)
+        : new Date(startTime.getTime() + estimatedMinutes * 60000);
+
+      if (existingCalEvent) {
+        await CalendarEvent.updateOne(
+          { _id: existingCalEvent._id },
+          {
+            $set: {
+              title: task.title,
+              description: task.description || `Estimated: ${estimatedMinutes}m · Priority: ${task.priority || "medium"}`,
+              startTime,
+              endTime,
+            },
+          }
+        );
+      } else {
+        await CalendarEvent.create({
+          userId: userObjId,
+          taskId: taskObjId,
+          title: task.title,
+          description: task.description,
+          startTime,
+          endTime,
+          type: task.type === "assignment" ? "assignment" : task.type === "leetcode" ? "personal" : "study",
+          source: "internal",
+        });
+      }
+    }
+  } catch {
+    // Non-fatal calendar sync
+  }
+
+  if (input.status === "completed") {
+    EventService.emitEvent({
+      userId,
+      type: "TASK_COMPLETED",
+      source: "user",
+      entityType: "task",
+      entityId: taskId,
+      metadata: { taskTitle: task.title },
+    }).catch((err) => console.warn("Failed to emit TASK_COMPLETED event:", err));
+  } else if (input.scheduledStart !== undefined || input.dueAt !== undefined) {
+    EventService.emitEvent({
+      userId,
+      type: "TASK_RESCHEDULED",
+      source: "user",
+      entityType: "task",
+      entityId: taskId,
+      metadata: {
+        taskTitle: task.title,
+        scheduledStart: task.scheduledStart,
+        dueAt: task.dueAt,
+      },
+    }).catch((err) => console.warn("Failed to emit TASK_RESCHEDULED event:", err));
+  }
+
   return task;
 }
 
@@ -137,6 +248,16 @@ export async function deleteTask(userId: string, taskId: string) {
 
   if (!task) {
     throw new Error(`Task ${taskId} not found`);
+  }
+
+  // Automatically delete corresponding CalendarEvent
+  try {
+    await CalendarEvent.deleteMany({
+      userId: new Types.ObjectId(userId),
+      taskId: new Types.ObjectId(taskId),
+    });
+  } catch {
+    // Ignore non-fatal error
   }
 
   return task;

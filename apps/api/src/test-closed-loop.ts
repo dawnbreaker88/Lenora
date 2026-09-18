@@ -186,12 +186,13 @@ async function main() {
   console.log("\n[Concept Level Assessment]:", submissionResult.assessment.conceptAssessment);
   console.log("[Identified Misconceptions]:", submissionResult.assessment.misconceptions);
 
-  if (submissionResult.plannerReview) {
+  const plannerReview = (submissionResult as any).plannerReview;
+  if (plannerReview) {
     console.log("\n[Automatic Post-Test Planner Review]:");
-    console.log(`- Triggered: ${submissionResult.plannerReview.triggered}`);
-    console.log(`- Message: ${submissionResult.plannerReview.message}`);
-    console.log(`- Actions Executed: ${submissionResult.plannerReview.actions?.length || 0}`);
-    submissionResult.plannerReview.actions?.forEach((a, i) => {
+    console.log(`- Triggered: ${plannerReview.triggered}`);
+    console.log(`- Message: ${plannerReview.message}`);
+    console.log(`- Actions Executed: ${plannerReview.actions?.length || 0}`);
+    plannerReview.actions?.forEach((a: any, i: number) => {
       console.log(`    ${i + 1}. [${a.type}] ${a.label}`);
     });
   }

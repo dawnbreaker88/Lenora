@@ -92,7 +92,7 @@ export class AgentLogger {
     );
   }
 
-  complete(meta?: Record<string, unknown>): { durationMs: number; totalUsage: typeof this.totalUsage } {
+  complete(meta?: Record<string, unknown>): { durationMs: number; totalUsage: LLMUsage } {
     const durationMs = Date.now() - this.startTime;
     console.log(
       `${this.formatPrefix("INFO")} Agent execution completed in ${durationMs}ms (total tokens: ${
@@ -103,7 +103,7 @@ export class AgentLogger {
     return { durationMs, totalUsage: this.totalUsage };
   }
 
-  fail(error: unknown): { durationMs: number; totalUsage: typeof this.totalUsage } {
+  fail(error: unknown): { durationMs: number; totalUsage: LLMUsage } {
     const durationMs = Date.now() - this.startTime;
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error(

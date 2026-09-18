@@ -3,9 +3,11 @@ import { Test, type ITest } from "../models/Test.js";
 import { TestAttempt, type ITestAnswer } from "../models/TestAttempt.js";
 import { Topic } from "../models/Topic.js";
 import { FeynmanSession } from "../models/FeynmanSession.js";
+import { AgentSession } from "../models/AgentSession.js";
 import { generateTest } from "../agents/test-generator.js";
 import { evaluateTest } from "../agents/evaluator.js";
 import { applyTestAssessment } from "./learner-state.service.js";
+import { EventService } from "../events/event.service.js";
 
 
 export interface GenerateTestServiceInput {
@@ -81,18 +83,54 @@ export async function generateTestForSession(
     });
   }
 
-  // 2. Fetch session messages if sessionId provided
+  // 2. Fetch session messages & context if sessionId provided
   let sessionMessages: Array<{ role: string; content: string }> = [];
+  let sessionTopicName = input.topicName;
+  let sessionSubject = input.subject;
+
   if (sessionId && Types.ObjectId.isValid(sessionId)) {
-    const session = await FeynmanSession.findOne({
+    // Check AgentSession first (where current Feynman conversations are stored)
+    const agentSession = await AgentSession.findOne({
       _id: new Types.ObjectId(sessionId),
       userId: userObjId,
     });
-    if (session) {
-      sessionMessages = session.messages.map((m) => ({
+
+    if (agentSession) {
+      sessionMessages = agentSession.messages.map((m) => ({
         role: m.role,
         content: m.content,
       }));
+
+      if (agentSession.context?.topicName && !sessionTopicName) {
+        sessionTopicName = agentSession.context.topicName;
+      }
+    } else {
+      // Fallback check on FeynmanSession collection
+      const feynmanSession = await FeynmanSession.findOne({
+        _id: new Types.ObjectId(sessionId),
+        userId: userObjId,
+      });
+      if (feynmanSession) {
+        sessionMessages = feynmanSession.messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+      }
+    }
+  }
+
+  // If topicDoc was general but we found a specific topicName from the session, look up/update it
+  if (sessionTopicName && topicDoc.name === "General Learning Assessment") {
+    const betterTopic = await Topic.findOne({
+      userId: userObjId,
+      name: { $regex: new RegExp(`^${sessionTopicName.trim()}$`, "i") },
+    });
+    if (betterTopic) {
+      topicDoc = betterTopic;
+    } else {
+      topicDoc.name = sessionTopicName;
+      if (sessionSubject) topicDoc.subject = sessionSubject;
+      await topicDoc.save();
     }
   }
 
@@ -198,6 +236,20 @@ export async function submitTestAttempt(input: SubmitTestServiceInput) {
     testId: test._id.toString(),
     assessment,
   });
+
+  EventService.emitEvent({
+    userId,
+    type: "ASSESSMENT_COMPLETED",
+    source: "learner",
+    entityType: "assessment",
+    entityId: attempt._id.toString(),
+    metadata: {
+      testId: test._id.toString(),
+      score: assessment.overallScore,
+      topicName,
+      weakTopics: stateUpdate.topic.weaknesses,
+    },
+  }).catch((err) => console.warn("Failed to emit ASSESSMENT_COMPLETED event:", err));
 
   return {
     attemptId: attempt._id.toString(),

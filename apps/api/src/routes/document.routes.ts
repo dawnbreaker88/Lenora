@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { authenticatedUser } from "../middleware/auth.js";
 import { deleteDocument, getDocuments, processDocument } from "../services/document.service.js";
+import { EventService } from "../events/event.service.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -27,6 +28,20 @@ documentRouter.post("/", upload.single("file"), async (req, res, next) => {
     }
     const userId = await authenticatedUser(req);
     const result = await processDocument(userId, req.file);
+
+    EventService.emitEvent({
+      userId,
+      type: "DOCUMENT_UPLOADED",
+      source: "user",
+      entityType: "document",
+      entityId: (result as any)._id?.toString?.() || (result as any).id,
+      metadata: {
+        fileName: req.file.originalname,
+        title: (result as any).title || req.file.originalname,
+        size: req.file.size,
+      },
+    }).catch((err) => console.warn("Failed to emit DOCUMENT_UPLOADED event:", err));
+
     res.status(201).json(result);
   } catch (error) {
     next(error);

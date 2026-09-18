@@ -16,7 +16,7 @@ export async function queryRag(userId: string, query: string, topK = 5): Promise
 }
 
 /**
- * Retrieves context chunks and uses Gemini 3.8 Flash to synthesize a grounded answer.
+ * Retrieves context chunks and uses Gemini 3.6 Flash to synthesize a grounded answer.
  */
 export async function answerWithRag(userId: string, query: string, topK = 5): Promise<AnswerResponse> {
   const results = await retrieveRelevantChunks(userId, query, topK);

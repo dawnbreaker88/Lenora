@@ -108,10 +108,11 @@ Output ONLY valid JSON matching this schema:
 
   const candidateModels = [
     env.GOOGLE_GENERATION_MODEL,
+    "gemini-3.6-flash",
     "gemini-3.5-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-3.8-flash",
-  ].filter(Boolean);
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+  ].filter((m, i, arr): m is string => Boolean(m) && arr.indexOf(m) === i);
 
   let lastError: unknown;
 

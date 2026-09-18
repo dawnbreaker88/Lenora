@@ -33,9 +33,22 @@ const CalendarEventSchema = new Schema(
       enum: ["study", "class", "exam", "assignment", "personal", "other"],
       default: "study",
     },
+    externalId: {
+      type: String,
+      index: true,
+    },
+    calendarId: {
+      type: String,
+      default: "primary",
+    },
+    status: {
+      type: String,
+      enum: ["confirmed", "tentative", "cancelled"],
+      default: "confirmed",
+    },
     source: {
       type: String,
-      enum: ["internal", "google"],
+      enum: ["internal", "google", "lenora", "external"],
       default: "internal",
     },
   },
@@ -45,5 +58,7 @@ const CalendarEventSchema = new Schema(
 );
 
 CalendarEventSchema.index({ userId: 1, startTime: 1, endTime: 1 });
+CalendarEventSchema.index({ userId: 1, externalId: 1 });
+
 
 export const CalendarEvent = model("CalendarEvent", CalendarEventSchema);

@@ -119,6 +119,14 @@ async function dispatchToolCall(
           (res as { events?: unknown[] })?.events?.length ??
           0;
         actionLabel = `Checked calendar schedule (${count} events found)`;
+      } else if (name === "find_available_slots") {
+        actionType = "state_inspected";
+        const count = (res as { count?: number })?.count ?? 0;
+        actionLabel = `Searched calendar availability (${count} open slots found)`;
+      } else if (name === "check_calendar_connection") {
+        actionType = "state_inspected";
+        const prov = (res as { provider?: string })?.provider || "internal";
+        actionLabel = `Checked calendar connection (${prov})`;
       } else if (name === "check_time_conflicts") {
         actionType = "state_inspected";
         actionLabel = (res as { hasConflicts?: boolean })?.hasConflicts
@@ -203,17 +211,19 @@ CAPABILITIES & TOOLS:
 - get_student_state: Retrieve fresh state snapshot if significant workload mutations have occurred.
 - create_goal / update_goal: Manage high-level learning goals and milestones.
 - create_task / update_task / delete_task: Manage actionable study/practice tasks with estimated duration.
-- get_calendar_events / create_calendar_event / update_calendar_event / delete_calendar_event / check_time_conflicts: Manage schedule blocks and detect overlapping time conflicts.
+- check_calendar_connection: Check if user's Google Calendar is connected.
+- get_calendar_events / find_available_slots / create_calendar_event / update_calendar_event / delete_calendar_event / check_time_conflicts: Inspect schedule, find open blocks, and manage calendar commitments.
 
 CRITICAL OPERATING RULES:
-1. Do NOT merely describe a plan in text. When an action is requested or required, USE THE AVAILABLE TOOLS to actually modify the student's workload in the database.
-2. Inspect current state and workload before making major additions.
-3. Respect existing commitments and avoid scheduling overlapping tasks.
-4. Consider deadlines, priority, and estimated workload. Break large goals into actionable, bite-sized tasks (30-60m).
-5. Do not overload the student. If the user's requested workload exceeds daily capacity, identify the conflict, propose a manageable alternative, and schedule accordingly.
+1. MANDATORY TOOL EXECUTION: Do NOT merely write out a schedule in text. When the student asks to schedule, plan, or reorganize their study time, YOU MUST EXECUTE tool calls (create_calendar_event or create_task with concrete scheduledStart and scheduledEnd). Never state that a session was scheduled unless you actually executed create_calendar_event or create_task.
+2. NEVER FABRICATE FREE TIME: Always inspect calendar availability with get_calendar_events or find_available_slots before picking a study slot. Do not guess that an hour is free without checking.
+3. EXTERNAL EVENT PROTECTION: Respect external calendar commitments (lectures, personal events). Treat them as hard constraints. Do NOT attempt to delete or alter external events.
+4. RESCHEDULING & SYNCHRONIZATION: When rescheduling a session, update both the calendar event and the associated task so they remain in perfect sync.
+5. Respect student daily study limits and avoid scheduling overlapping tasks. Break large goals into bite-sized, 30-60m sessions.
 6. After modifying the schedule or tasks, verify your changes and provide a concise, clear explanation.
 7. Never claim that an action was completed unless the tool successfully executed it.
-8. When reviewing student state or when weak concepts/misconceptions exist, proactively schedule targeted revision tasks or calendar study blocks to remediate those weak areas.`;
+8. When reviewing student state or when weak concepts/misconceptions exist, proactively schedule targeted revision tasks or calendar study blocks to remediate those weak areas.
+9. CALENDAR SYNC MANDATE: Every planned study block must appear on the student's calendar. Always call create_calendar_event for upcoming sessions so they are physically booked on their real Google Calendar and visible in Lenora.`;
 
   // 4. Build bounded multi-turn conversation history
   const contents: Array<Record<string, unknown>> = [];
@@ -330,7 +340,14 @@ CRITICAL OPERATING RULES:
 
   // 6. Record interaction in AgentSession history
   await appendSessionMessage(sessionId, userId, "user", message);
-  await appendSessionMessage(sessionId, userId, "model", finalMessage, `Actions: ${actions.length}`);
+  await appendSessionMessage(
+    sessionId,
+    userId,
+    "model",
+    finalMessage,
+    `Actions: ${actions.length}`,
+    actions
+  );
 
   // 7. Fetch final updated student state snapshot
   const finalState = await getStudentState(userId);

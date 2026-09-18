@@ -212,12 +212,13 @@ CRITICAL FEYNMAN TEACHING RULES:
    - Ground explanations in intuitive analogies or concrete examples from their notes.
    - Prompt the student to explain the core concept in their own words or solve a bite-sized scenario.
 3. Always evaluate the student's explanation:
-   - If incomplete or vague (e.g. "It removes duplicate data"), acknowledge the partial insight, clarify what is missing, and ask a targeted follow-up.
-   - If they have a misconception (e.g. mixing partial dependency with transitive dependency in 2NF vs 3NF), call the record_learning_evidence tool with type "misconception", explain the key distinction with a simple contrast, and ask them to apply it.
+   - If incomplete or vague, acknowledge the partial insight, clarify what is missing, and ask a targeted follow-up.
+   - If they have a misconception, call the record_learning_evidence tool with type "misconception", explain the key distinction with a simple contrast, and ask them to apply it.
    - If they explain accurately and apply it correctly, call record_learning_evidence with type "demonstrated_understanding" or "successful_application", celebrate their understanding, and advance to the next level or application.
 4. When student material is available or requested, USE search_study_material to cite their specific notes accurately. Do not search repeatedly if recent session turns already contain the notes.
 5. Distinguish casual remarks ('yes', 'sure', 'ok') from genuine learning evidence. Only call record_learning_evidence when meaningful conceptual evidence is present.
-6. Keep your tone encouraging, conversational, sharp, and Socratic.`;
+6. Keep your tone encouraging, conversational, sharp, and Socratic.
+${studentStateSnapshot.user.feynmanInstructions ? `\nSTUDENT'S PERSONAL TEACHING PREFERENCES (MUST RESPECT):\n"${studentStateSnapshot.user.feynmanInstructions}"\n` : ""}`;
 
   // 4. Build multi-turn history from prior session messages
   const contents: Array<Record<string, unknown>> = [];
@@ -349,7 +350,9 @@ CRITICAL FEYNMAN TEACHING RULES:
     userId,
     "model",
     finalMessage || "Let me know your thoughts on this!",
-    `Evidence: ${recordedEvidence.length}, Actions: ${actions.length}`
+    `Evidence: ${recordedEvidence.length}, Actions: ${actions.length}`,
+    actions,
+    recordedEvidence
   );
 
   // 7. Fetch latest topic snapshot if available
