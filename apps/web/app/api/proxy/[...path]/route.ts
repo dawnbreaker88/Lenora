@@ -3,6 +3,14 @@ import { type NextRequest, NextResponse } from "next/server";
 const API_BASE = process.env.API_BASE_URL || "http://127.0.0.1:4000/api";
 const API_FALLBACK = "http://localhost:4000/api";
 
+function getTargetUrl(baseUrl: string, pathSegments: string[], search: string): string {
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  const pathPart = pathSegments.join("/");
+  return cleanBase.endsWith("/api")
+    ? `${cleanBase}/${pathPart}${search}`
+    : `${cleanBase}/api/${pathPart}${search}`;
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   return handleProxy(req, await params);
 }
@@ -37,7 +45,7 @@ async function handleProxy(req: NextRequest, { path }: { path: string[] }) {
     : null;
 
   const tryFetch = async (baseUrl: string) => {
-    const targetUrl = `${baseUrl}/${path.join("/")}${req.nextUrl.search}`;
+    const targetUrl = getTargetUrl(baseUrl, path, req.nextUrl.search);
     return fetch(targetUrl, {
       method: req.method,
       headers: forwardHeaders,
@@ -47,14 +55,18 @@ async function handleProxy(req: NextRequest, { path }: { path: string[] }) {
 
   try {
     let res: Response;
-    try {
-      res = await tryFetch(API_BASE);
-    } catch (primaryErr) {
-      // If 127.0.0.1 fails, try localhost fallback
+    if (process.env.API_SERVICE_URL) {
+      res = await tryFetch(process.env.API_SERVICE_URL);
+    } else {
       try {
-        res = await tryFetch(API_FALLBACK);
-      } catch {
-        throw primaryErr;
+        res = await tryFetch(API_BASE);
+      } catch (primaryErr) {
+        // If 127.0.0.1 fails, try localhost fallback
+        try {
+          res = await tryFetch(API_FALLBACK);
+        } catch {
+          throw primaryErr;
+        }
       }
     }
 

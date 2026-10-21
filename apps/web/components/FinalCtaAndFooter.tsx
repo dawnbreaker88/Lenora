@@ -51,23 +51,11 @@ export function FinalCtaAndFooter({ onGetStarted }: FinalCtaAndFooterProps) {
 
           {/* Links */}
           <div className="flex flex-wrap items-center gap-6 font-medium text-[#8a8f98]">
-            <a href="#product-ui" className="hover:text-white transition-colors">
-              Product
+            <a href="#agents" className="hover:text-white transition-colors">
+              The 3 Agents
             </a>
             <a href="#loop" className="hover:text-white transition-colors">
-              Workflow
-            </a>
-            <a href="#agents" className="hover:text-white transition-colors">
-              Agents
-            </a>
-            <a href="#feynman" className="hover:text-white transition-colors">
-              Feynman
-            </a>
-            <a href="#state" className="hover:text-white transition-colors">
-              Student State
-            </a>
-            <a href="#architecture" className="hover:text-white transition-colors">
-              Architecture
+              How It Works
             </a>
             <Link
               href="/login"

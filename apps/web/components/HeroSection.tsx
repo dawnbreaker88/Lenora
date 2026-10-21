@@ -152,7 +152,7 @@ export function HeroSection({ onGetStarted }: HeroSectionProps) {
             <ArrowRight className="w-4 h-4" />
           </Link>
           <a
-            href="#loop"
+            href="#agents"
             className="w-full sm:w-auto btn-secondary text-sm px-6 py-3 flex items-center justify-center gap-1.5"
           >
             <span>See how it works</span>

@@ -281,7 +281,7 @@ export function SettingsView({
                       } catch (err) {
                         console.error(err);
                       }
-                      window.location.href = "http://localhost:4000/api/calendar/auth";
+                      window.location.href = "/api/calendar/auth";
                     }
                   }}
                   className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#e4f222] hover:bg-[#d2e01b] text-black text-xs font-mono font-bold tracking-tight transition-all cursor-pointer shadow-lg hover:scale-[1.02] active:scale-[0.98]"

@@ -23,12 +23,8 @@ export function Navbar({ onOpenAuth }: NavbarProps) {
   }, []);
 
   const navLinks = [
-    { label: "Product", href: "#product-ui" },
-    { label: "Workflow", href: "#loop" },
-    { label: "Agents", href: "#agents" },
-    { label: "Feynman", href: "#feynman" },
-
-    { label: "Architecture", href: "#architecture" },
+    { label: "The 3 Agents", href: "#agents" },
+    { label: "How It Works", href: "#loop" },
   ];
 
   return (

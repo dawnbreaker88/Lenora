@@ -89,7 +89,24 @@ desktop.ini
 *~
 
 # AI Agent & Scratch Folders
+.agents/
+skills-lock.json
 .kilo/
 .gemini/
 scratch/
 
+# Design Files & Assets
+designs/
+design/
+*.sketch
+*.fig
+*.xd
+
+# Rough / Draft Markdown Notes (keep README.md & AGENTS.md)
+back.md
+feynman.md
+frontendmain.md
+halska.md
+*.scratch.md
+*.draft.md
+*.rough.md

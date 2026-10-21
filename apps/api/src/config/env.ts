@@ -16,8 +16,20 @@ const envSchema = z.object({
   NEXTAUTH_SECRET: z.string().min(1).optional(),
   GOOGLE_CLIENT_ID: z.string().optional().default(""),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(""),
-  GOOGLE_CALENDAR_REDIRECT_URI: z.string().optional().default("http://localhost:4000/api/calendar/callback"),
-  FRONTEND_URL: z.string().optional().default("http://localhost:3000"),
+  GOOGLE_CALENDAR_REDIRECT_URI: z.string().optional().default(
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/calendar/callback`
+      : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}/api/calendar/callback`
+      : "http://localhost:4000/api/calendar/callback"
+  ),
+  FRONTEND_URL: z.string().optional().default(
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000"
+  ),
 });
 
 export const env = envSchema.parse(process.env);
