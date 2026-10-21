@@ -1,6 +1,8 @@
 # Dependencies & Package Managers
 node_modules/
 .pnpm-store/
+package-lock.json
+calendar/
 .pnp/
 .pnp.*
 .yarn/*

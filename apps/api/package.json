@@ -19,6 +19,7 @@
     "multer": "^2.0.2",
     "next-auth": "^4.24.15",
     "pdf-parse": "^2.4.5",
+    "typescript": "^5.9.3",
     "zod": "^4.6.5"
   },
   "devDependencies": {
