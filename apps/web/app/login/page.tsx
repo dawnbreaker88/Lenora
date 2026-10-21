@@ -9,8 +9,19 @@ export const metadata: Metadata = {
   description: "Sign in to access your agentic study workspace and goals.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage() {
-  const session = await getServerSession(authOptions);
+  let session = null;
+  try {
+    session = await getServerSession(authOptions);
+  } catch (error: any) {
+    if (error?.digest === "DYNAMIC_SERVER_USAGE" || error?.digest?.startsWith("NEXT_REDIRECT")) {
+      throw error;
+    }
+    console.error("Failed to load server session in LoginPage:", error);
+  }
+
   if (session?.user) {
     redirect("/");
   }
